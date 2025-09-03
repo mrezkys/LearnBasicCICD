@@ -20,10 +20,25 @@ platform :ios do
   desc "Build archive"
   lane :build do
     prepare_build_number
+
+    is_ci = ENV['CI'] == 'true'  # true on GitHub Actions
+
     gym(
       export_method: "app-store",
+      configuration: "Release",
       output_directory: "Build",
-      output_name: "App.ipa"
+      output_name: "App.ipa",
+
+      # CI-only: force manual signing and map your bundle -> profile
+      export_options: is_ci ? {
+        signingStyle: "manual",
+        provisioningProfiles: {
+          ENV["APP_BUNDLE_ID"] => ENV["PROFILE_NAME"]
+        }
+      } : nil,
+
+      # CI-only: push team/profile/Manual into xcodebuild
+      xcargs: is_ci ? "DEVELOPMENT_TEAM=#{ENV['DEVELOPMENT_TEAM']} PROVISIONING_PROFILE_SPECIFIER=#{ENV['PROFILE_UUID']} CODE_SIGN_STYLE=Manual" : nil
     )
   end
 

@@ -27,7 +27,7 @@ jobs:
         with:
           bundler-cache: true
 
-      # Write App Store Connect API key JSON for Fastlane (pilot/deliver)
+      # Write App Store Connect API key JSON (used by pilot/deliver)
       - name: Provide App Store Connect API key to Fastlane
         run: |
           mkdir -p fastlane
@@ -35,13 +35,14 @@ jobs:
         env:
           APPSTORE_CONNECT_API_KEY_JSON: ${{ secrets.APPSTORE_CONNECT_API_KEY_JSON }}
 
-      # Import Apple Distribution certificate (.p12) into a temporary CI keychain
+      # Import Apple Distribution certificate (.p12) into a CI keychain
       - name: Create signing keychain & import Distribution cert
         run: |
           security create-keychain -p "" build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p "" build.keychain
           security set-keychain-settings -lut 21600 build.keychain
+          security list-keychains -s build.keychain
 
           echo "$IOS_DIST_CERT_P12_BASE64" | base64 --decode > dist.p12
           security import dist.p12 -k build.keychain -P "$IOS_DIST_CERT_P12_PASSWORD" -A
@@ -65,13 +66,11 @@ jobs:
         env:
           IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
 
-      # Build & upload using your Fastlane lane (manual signing on CI)
+      # Build & upload using your Fastlane lane (Fastfile must force manual signing on CI)
       - name: Fastlane beta_internal
         env:
           CI: "true"
-          # App Store Connect API key path for pilot
           APP_STORE_CONNECT_API_KEY_PATH: fastlane/api_key.json
-          # Signing details (hardcoded here for simplicity; change if yours differ)
           DEVELOPMENT_TEAM: 5LSQ3C9W8U
           APP_BUNDLE_ID: com.mrezkys.LearnBasicCICD
           PROFILE_UUID: ${{ steps.prof.outputs.uuid }}
