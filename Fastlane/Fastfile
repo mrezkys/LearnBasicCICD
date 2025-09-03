@@ -46,6 +46,7 @@ platform :ios do
   lane :beta_internal do
     build
     pilot(
+      api_key_path: "fastlane/api_key.json",
       skip_waiting_for_build_processing: false,
       distribute_external: false
     )
