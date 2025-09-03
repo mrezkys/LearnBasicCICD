@@ -2,8 +2,8 @@ name: CD - TestFlight Internal
 
 on:
   push:
-    branches: [main]      # deploy when you push/merge to main
-  workflow_dispatch:       # allow manual runs
+    branches: [main]      # Deploy when you push/merge to main
+  workflow_dispatch:       # Allow manual runs
 
 concurrency:
   group: cd-internal-${{ github.ref }}
@@ -14,16 +14,20 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: maxim-lobanov/setup-xcode@v1
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
 
-      - uses: ruby/setup-ruby@v1
+      - name: Setup Ruby (bundler cache)
+        uses: ruby/setup-ruby@v1
         with:
           bundler-cache: true
 
+      # Write App Store Connect API key JSON for Fastlane (pilot/deliver)
       - name: Provide App Store Connect API key to Fastlane
         run: |
           mkdir -p fastlane
@@ -31,12 +35,51 @@ jobs:
         env:
           APPSTORE_CONNECT_API_KEY_JSON: ${{ secrets.APPSTORE_CONNECT_API_KEY_JSON }}
 
+      # Import Apple Distribution certificate (.p12) into a temporary CI keychain
+      - name: Create signing keychain & import Distribution cert
+        run: |
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+
+          echo "$IOS_DIST_CERT_P12_BASE64" | base64 --decode > dist.p12
+          security import dist.p12 -k build.keychain -P "$IOS_DIST_CERT_P12_PASSWORD" -A
+          # Allow codesign/xcodebuild to use the key without prompts
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+        env:
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_DIST_CERT_P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_P12_PASSWORD }}
+
+      # Install the App Store provisioning profile (.mobileprovision)
+      - name: Install provisioning profile
+        id: prof
+        run: |
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          echo "$IOS_PROFILE_BASE64" | base64 --decode > profile.mobileprovision
+          UUID=$(/usr/libexec/PlistBuddy -c Print:UUID /dev/stdin <<< "$(security cms -D -i profile.mobileprovision)")
+          NAME=$(/usr/libexec/PlistBuddy -c Print:Name /dev/stdin <<< "$(security cms -D -i profile.mobileprovision)")
+          echo "uuid=$UUID" >> $GITHUB_OUTPUT
+          echo "name=$NAME" >> $GITHUB_OUTPUT
+          cp profile.mobileprovision "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+        env:
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+
+      # Build & upload using your Fastlane lane (manual signing on CI)
       - name: Fastlane beta_internal
         env:
+          CI: "true"
+          # App Store Connect API key path for pilot
           APP_STORE_CONNECT_API_KEY_PATH: fastlane/api_key.json
+          # Signing details (hardcoded here for simplicity; change if yours differ)
+          DEVELOPMENT_TEAM: 5LSQ3C9W8U
+          APP_BUNDLE_ID: com.mrezkys.LearnBasicCICD
+          PROFILE_UUID: ${{ steps.prof.outputs.uuid }}
+          PROFILE_NAME: ${{ steps.prof.outputs.name }}
           FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: 120
         run: bundle exec fastlane beta_internal
 
+      # Save build artifacts (ipa & dSYM) for debugging / manual distribution
       - name: Upload artifacts (ipa & dSYM)
         if: always()
         uses: actions/upload-artifact@v4
