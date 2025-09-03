@@ -23,6 +23,22 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 Builds project and executes unit tests
 
+### ios build
+
+```sh
+[bundle exec] fastlane ios build
+```
+
+Build archive
+
+### ios beta_internal
+
+```sh
+[bundle exec] fastlane ios beta_internal
+```
+
+Upload to TestFlight - Internal Tester
+
 ----
 
 This README.md is auto-generated and will be re-generated every time [_fastlane_](https://fastlane.tools) is run.
