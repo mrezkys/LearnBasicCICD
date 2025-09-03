@@ -20,7 +20,7 @@ platform :ios do
   lane :build do
     prepare_build_number
 
-    is_ci = (ENV['CI'] == 'true') # true on GitHub Actions
+    is_ci = (ENV['CI'] == 'true')
 
     gym(
       project: "./LearnBasicCICD.xcodeproj",
@@ -30,7 +30,7 @@ platform :ios do
       output_directory: "Build",
       output_name: "App.ipa",
 
-      # CI-only: force manual signing and map your bundle -> profile name
+      # CI-only: manual signing & mapping bundle -> profile name for export
       export_options: is_ci ? {
         signingStyle: "manual",
         provisioningProfiles: {
@@ -38,8 +38,13 @@ platform :ios do
         }
       } : nil,
 
-      # CI-only: pass team, profile UUID, and Manual mode to xcodebuild
-      xcargs: is_ci ? "DEVELOPMENT_TEAM=#{ENV['DEVELOPMENT_TEAM']} PROVISIONING_PROFILE_SPECIFIER=#{ENV['PROFILE_UUID']} CODE_SIGN_STYLE=Manual" : nil
+      # CI-only: force archive to use Distribution identity & your profile
+      xcargs: is_ci ? %Q[
+        DEVELOPMENT_TEAM=#{ENV['DEVELOPMENT_TEAM']}
+        CODE_SIGN_STYLE=Manual
+        CODE_SIGN_IDENTITY="Apple Distribution"
+        PROVISIONING_PROFILE_SPECIFIER=#{ENV['PROFILE_UUID']}
+      ].gsub(/\s+/, ' ') : nil
     )
   end
 
