@@ -2,14 +2,13 @@ fastlane_version ''
 default_platform :ios
 
 platform :ios do
-    desc 'Builds project and executes unit tests'
-    lane :unit_test do |options|
-      scan(
-        clean: options[:clean],
-        skip_package_dependencies_resolution: options[:skip_package_dependencies_resolution]
-      )
-    end
-
+  desc 'Builds project and executes unit tests'
+  lane :unit_test do |options|
+    scan(
+      clean: options[:clean],
+      skip_package_dependencies_resolution: options[:skip_package_dependencies_resolution]
+    )
+  end
 
   private_lane :prepare_build_number do
     increment_build_number(
@@ -20,10 +19,32 @@ platform :ios do
   desc "Build archive"
   lane :build do
     prepare_build_number
+
+    is_ci = (ENV['CI'] == 'true')
+
     gym(
+      project: "./LearnBasicCICD.xcodeproj",
+      scheme:  "LearnBasicCICD",
+      configuration: "Release",
       export_method: "app-store",
       output_directory: "Build",
-      output_name: "App.ipa"
+      output_name: "App.ipa",
+
+      # CI-only: manual signing & mapping bundle -> profile name for export
+      export_options: is_ci ? {
+        signingStyle: "manual",
+        provisioningProfiles: {
+          ENV["APP_BUNDLE_ID"] => ENV["PROFILE_NAME"]
+        }
+      } : nil,
+
+      # CI-only: force archive to use Distribution identity & your profile
+      xcargs: is_ci ? %Q[
+        DEVELOPMENT_TEAM=#{ENV['DEVELOPMENT_TEAM']}
+        CODE_SIGN_STYLE=Manual
+        CODE_SIGN_IDENTITY="Apple Distribution"
+        PROVISIONING_PROFILE_SPECIFIER=#{ENV['PROFILE_UUID']}
+      ].gsub(/\s+/, ' ') : nil
     )
   end
 
@@ -31,9 +52,9 @@ platform :ios do
   lane :beta_internal do
     build
     pilot(
+      api_key_path: "fastlane/api_key.json",
       skip_waiting_for_build_processing: false,
       distribute_external: false
     )
   end
-
 end

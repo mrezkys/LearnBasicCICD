@@ -27,7 +27,7 @@ jobs:
         with:
           bundler-cache: true
 
-      # Write App Store Connect API key JSON for Fastlane (pilot/deliver)
+      # Write App Store Connect API key JSON (used by pilot/deliver)
       - name: Provide App Store Connect API key to Fastlane
         run: |
           mkdir -p fastlane
@@ -35,13 +35,14 @@ jobs:
         env:
           APPSTORE_CONNECT_API_KEY_JSON: ${{ secrets.APPSTORE_CONNECT_API_KEY_JSON }}
 
-      # Import Apple Distribution certificate (.p12) into a temporary CI keychain
+      # Import Apple Distribution certificate (.p12) into a CI keychain
       - name: Create signing keychain & import Distribution cert
         run: |
           security create-keychain -p "" build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p "" build.keychain
           security set-keychain-settings -lut 21600 build.keychain
+          security list-keychains -s build.keychain
 
           echo "$IOS_DIST_CERT_P12_BASE64" | base64 --decode > dist.p12
           security import dist.p12 -k build.keychain -P "$IOS_DIST_CERT_P12_PASSWORD" -A
@@ -65,19 +66,32 @@ jobs:
         env:
           IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
 
-      # Build & upload using your Fastlane lane (manual signing on CI)
+      # Quick diagnostics (helps a ton if signing fails)
+      - name: Show imported signing identities
+        run: security find-identity -v -p codesigning | sed -E 's/^(.*)"Apple/\1"Apple/'
+
+      - name: Show installed provisioning profiles
+        run: |
+          ls "$HOME/Library/MobileDevice/Provisioning Profiles" || true
+          for f in "$HOME/Library/MobileDevice/Provisioning Profiles"/*.mobileprovision; do
+            [[ -e "$f" ]] || continue
+            uuid=$(/usr/libexec/PlistBuddy -c Print:UUID /dev/stdin <<< "$(security cms -D -i "$f")")
+            name=$(/usr/libexec/PlistBuddy -c Print:Name /dev/stdin <<< "$(security cms -D -i "$f")")
+            appid=$(/usr/libexec/PlistBuddy -c 'Print:Entitlements:application-identifier' /dev/stdin <<< "$(security cms -D -i "$f")" 2>/dev/null || echo "n/a")
+            echo "$uuid  $name  $appid"
+          done
+
+      # Build & upload using your Fastlane lane (Fastfile forces manual signing on CI)
       - name: Fastlane beta_internal
         env:
           CI: "true"
-          # App Store Connect API key path for pilot
           APP_STORE_CONNECT_API_KEY_PATH: fastlane/api_key.json
-          # Signing details (hardcoded here for simplicity; change if yours differ)
           DEVELOPMENT_TEAM: 5LSQ3C9W8U
           APP_BUNDLE_ID: com.mrezkys.LearnBasicCICD
           PROFILE_UUID: ${{ steps.prof.outputs.uuid }}
           PROFILE_NAME: ${{ steps.prof.outputs.name }}
           FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: 120
-        run: bundle exec fastlane beta_internal
+        run: bundle exec fastlane beta_internal --verbose
 
       # Save build artifacts (ipa & dSYM) for debugging / manual distribution
       - name: Upload artifacts (ipa & dSYM)
@@ -88,4 +102,15 @@ jobs:
           path: |
             Build/*.ipa
             Build/*.dSYM.zip
+          if-no-files-found: ignore
+
+      # Always upload logs so debugging is easy if anything fails
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-logs
+          path: |
+            ~/Library/Logs/gym/*.log
+            ~/Library/Developer/Xcode/DerivedData/**/Logs/Build/*.xcresult
           if-no-files-found: ignore
