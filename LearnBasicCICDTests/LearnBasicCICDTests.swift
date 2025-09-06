@@ -14,6 +14,11 @@ struct LearnBasicCICDTests {
         #expect(2 == 2)
         // Write your test here and use APIs like `#expect(...)` to check expected conditions.
     }
+
+    @Test func exampleFailing() async throws {
+        #expect(2 == 1)
+        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
+    }
     
 
 }
